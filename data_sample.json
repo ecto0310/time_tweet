@@ -1,0 +1,15 @@
+{
+  "token": {
+    "consumer_key": "consumer_key",
+    "consumer_secret": "consumer_secret",
+    "oauth_token": "oauth_token",
+    "oauth_token_secret": "oauth_token_secret"
+  },
+  "schedule": [
+    {
+      "date": "2000-01-01 00:00:00.000",
+      "message": "message",
+      "result": false
+    }
+  ]
+}
