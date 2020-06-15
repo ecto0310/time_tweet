@@ -32,14 +32,44 @@ struct Data {
   schedule: Vec<Schedule>,
 }
 
+/// Post tweet
+///
+/// * message - message string
+/// * token - access token
+fn post_tweet(_message: &str, _token: &Token) -> i64 {
+  0
+}
+
+/// Delete tweet
+///
+/// * id - status id
+/// * token - access token
+fn delete_tweet(_id: i64, _token: &Token) {}
+
+/// Post reply
+///
+/// * id - status id
+/// * message - message string
+/// * token - access token
+fn post_reply(_id: i64, _message: &str, _token: &Token) {}
+
 /// Tweet
 ///
 /// * message - message string
 /// * token - access token
 /// * delete - delete setting
 /// * result - result setting
-fn tweet(_message: &str, _token: &Token, _delete: bool, _result: bool) -> DateTime<Local> {
-  Local::now()
+fn tweet(message: &str, token: &Token, delete: bool, result: bool) -> DateTime<Local> {
+  let id = post_tweet(message, token);
+  if delete {
+    delete_tweet(id, token);
+  }
+  let ms = ((id >> 22) + 1288834974657) as i64;
+  let date = Local.timestamp(ms / 1000, ((ms % 1000) * 1_000_000) as u32);
+  if result {
+    post_reply(id, &date.format(FORMAT).to_string(), token);
+  }
+  date
 }
 
 /// Tweet at time
