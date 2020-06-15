@@ -1,4 +1,4 @@
-use chrono::prelude::{Local, TimeZone};
+use chrono::prelude::{DateTime, Local, TimeZone};
 use chrono::Duration;
 use serde::Deserialize;
 use std::fs::File;
@@ -32,11 +32,39 @@ struct Data {
   schedule: Vec<Schedule>,
 }
 
+/// Tweet
+///
+/// * message - message string
+/// * token - access token
+/// * delete - delete setting
+/// * result - result setting
+fn tweet(_message: &str, _token: &Token, _delete: bool, _result: bool) -> DateTime<Local> {
+  Local::now()
+}
+
 /// Tweet at time
 ///
 /// * schedule - schedule data
 /// * token - access token
-fn time_tweet(_schedule: Schedule, _token: &Token) {}
+fn time_tweet(schedule: Schedule, token: &Token) {
+  let target_time = Local.datetime_from_str(&schedule.date, FORMAT).unwrap();
+  let test_target_time: DateTime<Local> = target_time - Duration::seconds(1);
+  thread::sleep(
+    test_target_time
+      .signed_duration_since(Local::now())
+      .to_std()
+      .unwrap(),
+  );
+  let test_date = tweet("test", token, true, false);
+  let diff = test_target_time.signed_duration_since(test_date);
+  thread::sleep(
+    (target_time + diff)
+      .signed_duration_since(Local::now())
+      .to_std()
+      .unwrap(),
+  );
+  tweet(&schedule.message, token, false, schedule.result);
+}
 
 fn main() {
   // Load schedule
