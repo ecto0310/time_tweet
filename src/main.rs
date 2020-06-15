@@ -1,4 +1,4 @@
-use chrono::prelude::{Local, TimeZone};
+use chrono::prelude::{DateTime, Local, TimeZone};
 use chrono::Duration;
 use serde::Deserialize;
 use std::fs::File;
@@ -32,11 +32,69 @@ struct Data {
   schedule: Vec<Schedule>,
 }
 
+/// Post tweet
+///
+/// * message - message string
+/// * token - access token
+fn post_tweet(_message: &str, _token: &Token) -> i64 {
+  0
+}
+
+/// Delete tweet
+///
+/// * id - status id
+/// * token - access token
+fn delete_tweet(_id: i64, _token: &Token) {}
+
+/// Post reply
+///
+/// * id - status id
+/// * message - message string
+/// * token - access token
+fn post_reply(_id: i64, _message: &str, _token: &Token) {}
+
+/// Tweet
+///
+/// * message - message string
+/// * token - access token
+/// * delete - delete setting
+/// * result - result setting
+fn tweet(message: &str, token: &Token, delete: bool, result: bool) -> DateTime<Local> {
+  let id = post_tweet(message, token);
+  if delete {
+    delete_tweet(id, token);
+  }
+  let ms = ((id >> 22) + 1288834974657) as i64;
+  let date = Local.timestamp(ms / 1000, ((ms % 1000) * 1_000_000) as u32);
+  if result {
+    post_reply(id, &date.format(FORMAT).to_string(), token);
+  }
+  date
+}
+
 /// Tweet at time
 ///
 /// * schedule - schedule data
 /// * token - access token
-fn time_tweet(_schedule: Schedule, _token: &Token) {}
+fn time_tweet(schedule: Schedule, token: &Token) {
+  let target_time = Local.datetime_from_str(&schedule.date, FORMAT).unwrap();
+  let test_target_time: DateTime<Local> = target_time - Duration::seconds(1);
+  thread::sleep(
+    test_target_time
+      .signed_duration_since(Local::now())
+      .to_std()
+      .unwrap(),
+  );
+  let test_date = tweet("test", token, true, false);
+  let diff = test_target_time.signed_duration_since(test_date);
+  thread::sleep(
+    (target_time + diff)
+      .signed_duration_since(Local::now())
+      .to_std()
+      .unwrap(),
+  );
+  tweet(&schedule.message, token, false, schedule.result);
+}
 
 fn main() {
   // Load schedule
