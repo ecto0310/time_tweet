@@ -1,5 +1,7 @@
 use chrono::prelude::{DateTime, Local, TimeZone};
 use chrono::Duration;
+use percent_encoding::{utf8_percent_encode, AsciiSet};
+use reqwest::header::HeaderMap;
 use serde::Deserialize;
 use std::fs::File;
 use std::io::BufReader;
@@ -7,6 +9,14 @@ use std::thread;
 
 /// Time format
 const FORMAT: &str = "%Y-%m-%d %H:%M:%S%.3f";
+
+/// Conversion rule
+const FRAGMENT: &AsciiSet = &percent_encoding::NON_ALPHANUMERIC
+  .remove(b'*')
+  .remove(b'-')
+  .remove(b'.')
+  .remove(b'_')
+  .remove(b'~');
 
 /// Key and token structure for calling API
 #[derive(Debug, Deserialize)]
@@ -32,12 +42,114 @@ struct Data {
   schedule: Vec<Schedule>,
 }
 
+/// Response structure
+#[derive(Debug, Deserialize)]
+struct Response {
+  id: i64,
+}
+
+/// Get signature for the oauth
+///
+/// * http_method - http method
+/// * endpoint - access destination
+/// * token - access token
+/// * param - parameter
+fn get_oauth_signature(
+  http_method: &str,
+  endpoint: &str,
+  token: &Token,
+  params: Vec<(&str, &str)>,
+) -> String {
+  let key = format!(
+    "{}&{}",
+    utf8_percent_encode(&token.consumer_secret, FRAGMENT),
+    utf8_percent_encode(&token.oauth_token_secret, FRAGMENT)
+  );
+
+  let mut params = params;
+  params.sort();
+  let params = params
+    .into_iter()
+    .map(|(k, v)| {
+      format!(
+        "{}={}",
+        utf8_percent_encode(k, FRAGMENT),
+        utf8_percent_encode(v, FRAGMENT)
+      )
+    })
+    .collect::<Vec<String>>()
+    .join("&");
+
+  let http_method = utf8_percent_encode(http_method, FRAGMENT);
+  let endpoint = utf8_percent_encode(endpoint, FRAGMENT);
+  let param = utf8_percent_encode(&params, FRAGMENT);
+
+  let data = format!("{}&{}&{}", http_method, endpoint, param);
+
+  let hash = hmacsha1::hmac_sha1(key.as_bytes(), data.as_bytes());
+  base64::encode(hash)
+}
+
+/// Get OAuth for the request
+///
+/// * endpoint - access destination
+/// * token - access token
+/// * params - parameter
+fn get_request_oauth(endpoint: &str, token: &Token, params: Vec<(&str, &str)>) -> String {
+  let oauth_nonce = &format!("{}", Local::now().timestamp());
+  let oauth_signature_method = "HMAC-SHA1";
+  let oauth_timestamp = &format!("{}", Local::now().timestamp());
+  let oauth_version = "1.0";
+
+  let mut params = params;
+  params.push(("oauth_consumer_key", &token.consumer_key));
+  params.push(("oauth_nonce", oauth_nonce));
+  params.push(("oauth_signature_method", oauth_signature_method));
+  params.push(("oauth_timestamp", oauth_timestamp));
+  params.push(("oauth_token", &token.oauth_token));
+  params.push(("oauth_version", oauth_version));
+
+  let oauth_signature = &get_oauth_signature("POST", &endpoint, &token, params);
+
+  format!(
+    "OAuth oauth_consumer_key=\"{}\", oauth_nonce=\"{}\", oauth_signature=\"{}\", oauth_signature_method=\"{}\", oauth_timestamp=\"{}\", oauth_token=\"{}\", oauth_version=\"{}\"",
+    utf8_percent_encode(&token.consumer_key, FRAGMENT),
+    utf8_percent_encode(oauth_nonce, FRAGMENT),
+    utf8_percent_encode(oauth_signature, FRAGMENT),
+    utf8_percent_encode(oauth_signature_method, FRAGMENT),
+    utf8_percent_encode(oauth_timestamp, FRAGMENT),
+    utf8_percent_encode(&token.oauth_token, FRAGMENT),
+    utf8_percent_encode(oauth_version, FRAGMENT),
+  )
+}
+
 /// Post tweet
 ///
 /// * message - message string
 /// * token - access token
-fn post_tweet(_message: &str, _token: &Token) -> i64 {
-  0
+async fn post_tweet(message: &str, token: &Token) -> Result<i64, reqwest::Error> {
+  let endpoint = "https://api.twitter.com/1.1/statuses/update.json";
+  let mut params: Vec<(&str, &str)> = Vec::new();
+  params.push(("status", message));
+  let mut headers = HeaderMap::new();
+  headers.insert(
+    "Authorization",
+    get_request_oauth(endpoint, token, params).parse().unwrap(),
+  );
+  headers.insert(
+    "Content-Type",
+    "application/x-www-form-urlencoded".parse().unwrap(),
+  );
+
+  let res: Response = reqwest::Client::new()
+    .post(endpoint)
+    .headers(headers)
+    .body(format!("status={}", utf8_percent_encode(message, FRAGMENT)))
+    .send()
+    .await?
+    .json()
+    .await?;
+  Ok(res.id)
 }
 
 /// Delete tweet
@@ -59,8 +171,8 @@ fn post_reply(_id: i64, _message: &str, _token: &Token) {}
 /// * token - access token
 /// * delete - delete setting
 /// * result - result setting
-fn tweet(message: &str, token: &Token, delete: bool, result: bool) -> DateTime<Local> {
-  let id = post_tweet(message, token);
+async fn tweet(message: &str, token: &Token, delete: bool, result: bool) -> DateTime<Local> {
+  let id = post_tweet(message, token).await.unwrap();
   if delete {
     delete_tweet(id, token);
   }
@@ -76,7 +188,7 @@ fn tweet(message: &str, token: &Token, delete: bool, result: bool) -> DateTime<L
 ///
 /// * schedule - schedule data
 /// * token - access token
-fn time_tweet(schedule: Schedule, token: &Token) {
+async fn time_tweet(schedule: Schedule, token: &Token) {
   let target_time = Local.datetime_from_str(&schedule.date, FORMAT).unwrap();
   let test_target_time: DateTime<Local> = target_time - Duration::seconds(1);
   thread::sleep(
@@ -85,7 +197,7 @@ fn time_tweet(schedule: Schedule, token: &Token) {
       .to_std()
       .unwrap(),
   );
-  let test_date = tweet("test", token, true, false);
+  let test_date = tweet("test", token, true, false).await;
   let diff = test_target_time.signed_duration_since(test_date);
   thread::sleep(
     (target_time + diff)
@@ -93,10 +205,11 @@ fn time_tweet(schedule: Schedule, token: &Token) {
       .to_std()
       .unwrap(),
   );
-  tweet(&schedule.message, token, false, schedule.result);
+  tweet(&schedule.message, token, false, schedule.result).await;
 }
 
-fn main() {
+#[tokio::main]
+async fn main() -> Result<(), ()> {
   // Load schedule
   let file = File::open("data.json").unwrap();
   let reader = BufReader::new(file);
@@ -112,6 +225,7 @@ fn main() {
       .to_std()
       .unwrap();
     thread::sleep(wait);
-    time_tweet(i, &token);
+    time_tweet(i, &token).await;
   }
+  Ok(())
 }
