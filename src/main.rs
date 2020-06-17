@@ -55,12 +55,39 @@ struct Response {
 /// * token - access token
 /// * param - parameter
 fn get_oauth_signature(
-  _http_method: &str,
-  _endpoint: &str,
-  _token: &Token,
-  _params: Vec<(&str, &str)>,
+  http_method: &str,
+  endpoint: &str,
+  token: &Token,
+  params: Vec<(&str, &str)>,
 ) -> String {
-  "".to_string()
+  let key = format!(
+    "{}&{}",
+    utf8_percent_encode(&token.consumer_secret, FRAGMENT),
+    utf8_percent_encode(&token.oauth_token_secret, FRAGMENT)
+  );
+
+  let mut params = params;
+  params.sort();
+  let params = params
+    .into_iter()
+    .map(|(k, v)| {
+      format!(
+        "{}={}",
+        utf8_percent_encode(k, FRAGMENT),
+        utf8_percent_encode(v, FRAGMENT)
+      )
+    })
+    .collect::<Vec<String>>()
+    .join("&");
+
+  let http_method = utf8_percent_encode(http_method, FRAGMENT);
+  let endpoint = utf8_percent_encode(endpoint, FRAGMENT);
+  let param = utf8_percent_encode(&params, FRAGMENT);
+
+  let data = format!("{}&{}&{}", http_method, endpoint, param);
+
+  let hash = hmacsha1::hmac_sha1(key.as_bytes(), data.as_bytes());
+  base64::encode(hash)
 }
 
 /// Get OAuth for the request
