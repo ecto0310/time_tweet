@@ -179,7 +179,34 @@ async fn delete_tweet(id: i64, token: &Token) -> Result<(), reqwest::Error> {
 /// * id - status id
 /// * message - message string
 /// * token - access token
-fn post_reply(_id: i64, _message: &str, _token: &Token) {}
+async fn post_reply(id: i64, message: &str, token: &Token) -> Result<(), reqwest::Error> {
+  let endpoint = "https://api.twitter.com/1.1/statuses/update.json";
+  let mut params: Vec<(&str, &str)> = Vec::new();
+  params.push(("status", message));
+  let id = &id.to_string();
+  params.push(("in_reply_to_status_id", id));
+  let mut headers = HeaderMap::new();
+  headers.insert(
+    "Authorization",
+    get_request_oauth(endpoint, token, params).parse().unwrap(),
+  );
+  headers.insert(
+    "Content-Type",
+    "application/x-www-form-urlencoded".parse().unwrap(),
+  );
+
+  reqwest::Client::new()
+    .post(endpoint)
+    .headers(headers)
+    .body(format!(
+      "status={}&in_reply_to_status_id={}",
+      utf8_percent_encode(message, FRAGMENT),
+      utf8_percent_encode(id, FRAGMENT)
+    ))
+    .send()
+    .await?;
+  Ok(())
+}
 
 /// Tweet
 ///
@@ -195,7 +222,9 @@ async fn tweet(message: &str, token: &Token, delete: bool, result: bool) -> Date
   let ms = ((id >> 22) + 1288834974657) as i64;
   let date = Local.timestamp(ms / 1000, ((ms % 1000) * 1_000_000) as u32);
   if result {
-    post_reply(id, &date.format(FORMAT).to_string(), token);
+    post_reply(id, &date.format(FORMAT).to_string(), token)
+      .await
+      .unwrap();
   }
   date
 }
