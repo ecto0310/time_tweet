@@ -48,13 +48,52 @@ struct Response {
   id: i64,
 }
 
+/// Get signature for the oauth
+///
+/// * http_method - http method
+/// * endpoint - access destination
+/// * token - access token
+/// * param - parameter
+fn get_oauth_signature(
+  _http_method: &str,
+  _endpoint: &str,
+  _token: &Token,
+  _params: Vec<(&str, &str)>,
+) -> String {
+  "".to_string()
+}
+
 /// Get OAuth for the request
 ///
 /// * endpoint - access destination
 /// * token - access token
 /// * params - parameter
-fn get_request_oauth(_endpoint: &str, _token: &Token, _params: Vec<(&str, &str)>) -> String {
-  "".to_string()
+fn get_request_oauth(endpoint: &str, token: &Token, params: Vec<(&str, &str)>) -> String {
+  let oauth_nonce = &format!("{}", Local::now().timestamp());
+  let oauth_signature_method = "HMAC-SHA1";
+  let oauth_timestamp = &format!("{}", Local::now().timestamp());
+  let oauth_version = "1.0";
+
+  let mut params = params;
+  params.push(("oauth_consumer_key", &token.consumer_key));
+  params.push(("oauth_nonce", oauth_nonce));
+  params.push(("oauth_signature_method", oauth_signature_method));
+  params.push(("oauth_timestamp", oauth_timestamp));
+  params.push(("oauth_token", &token.oauth_token));
+  params.push(("oauth_version", oauth_version));
+
+  let oauth_signature = &get_oauth_signature("POST", &endpoint, &token, params);
+
+  format!(
+    "OAuth oauth_consumer_key=\"{}\", oauth_nonce=\"{}\", oauth_signature=\"{}\", oauth_signature_method=\"{}\", oauth_timestamp=\"{}\", oauth_token=\"{}\", oauth_version=\"{}\"",
+    utf8_percent_encode(&token.consumer_key, FRAGMENT),
+    utf8_percent_encode(oauth_nonce, FRAGMENT),
+    utf8_percent_encode(oauth_signature, FRAGMENT),
+    utf8_percent_encode(oauth_signature_method, FRAGMENT),
+    utf8_percent_encode(oauth_timestamp, FRAGMENT),
+    utf8_percent_encode(&token.oauth_token, FRAGMENT),
+    utf8_percent_encode(oauth_version, FRAGMENT),
+  )
 }
 
 /// Post tweet
