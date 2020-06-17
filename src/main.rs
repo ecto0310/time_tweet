@@ -156,7 +156,23 @@ async fn post_tweet(message: &str, token: &Token) -> Result<i64, reqwest::Error>
 ///
 /// * id - status id
 /// * token - access token
-fn delete_tweet(_id: i64, _token: &Token) {}
+async fn delete_tweet(id: i64, token: &Token) -> Result<(), reqwest::Error> {
+  let endpoint = &format!("https://api.twitter.com/1.1/statuses/destroy/{}.json", id);
+  let mut headers = HeaderMap::new();
+  headers.insert(
+    "Authorization",
+    get_request_oauth(endpoint, token, Vec::<(&str, &str)>::new())
+      .parse()
+      .unwrap(),
+  );
+
+  reqwest::Client::new()
+    .post(endpoint)
+    .headers(headers)
+    .send()
+    .await?;
+  Ok(())
+}
 
 /// Post reply
 ///
@@ -174,7 +190,7 @@ fn post_reply(_id: i64, _message: &str, _token: &Token) {}
 async fn tweet(message: &str, token: &Token, delete: bool, result: bool) -> DateTime<Local> {
   let id = post_tweet(message, token).await.unwrap();
   if delete {
-    delete_tweet(id, token);
+    delete_tweet(id, token).await.unwrap();
   }
   let ms = ((id >> 22) + 1288834974657) as i64;
   let date = Local.timestamp(ms / 1000, ((ms % 1000) * 1_000_000) as u32);
